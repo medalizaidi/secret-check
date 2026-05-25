@@ -61,7 +61,6 @@ jobs:
             trufflehog git "<< pipeline.parameters.github_repo_url >>" \
               --json \
               --max-depth << pipeline.parameters.scan_depth >> \
-              --no-update \
               --branch << pipeline.parameters.github_branch >> \
             | tee scan_results/github_scan.jsonl
             
@@ -86,10 +85,10 @@ jobs:
             echo "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890Ab" > /tmp/verify/github.txt
             
             echo "=== Filesystem scan (should find secrets) ==="
-            trufflehog filesystem /tmp/verify --json --no-update
+            trufflehog filesystem /tmp/verify --json 
             
             echo "=== Checking output ==="
-            trufflehog filesystem /tmp/verify --json --no-update | wc -l
+            trufflehog filesystem /tmp/verify --json  | wc -l
 
       - store_artifacts:
           path: scan_results/github_scan.jsonl
@@ -126,7 +125,6 @@ jobs:
             # Removed docker login — image must be public
             trufflehog docker --image "<< pipeline.parameters.docker_image >>" \
               --json \
-              --no-update \
             | tee scan_results/docker_scan.jsonl
 
       - store_artifacts:
