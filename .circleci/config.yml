@@ -19,6 +19,7 @@ parameters:
   scan_depth:
     type: integer
     default: 50   
+ 
 # ──────────────────────────────────────────────
 # Reusable executors
 # ──────────────────────────────────────────────
@@ -27,28 +28,30 @@ executors:
     docker:
       - image: cimg/python:3.11
     resource_class: medium
-
+ 
 # ──────────────────────────────────────────────
 # Jobs
 # ──────────────────────────────────────────────
 jobs:
-
+ 
   # ── 1. Scan a GitHub repository ──────────────
   scan_github_repo:
     executor: scanner
     steps:
       - checkout
-
+ 
       - run:
           name: Install TruffleHog
           command: |
+            mkdir -p "$HOME/bin"
             curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
-              | sh -s -- -b /usr/local/bin
-
+              | sh -s -- -b "$HOME/bin"
+            echo 'export PATH="$HOME/bin:$PATH"' >> "$BASH_ENV"
+ 
       - run:
           name: Install Python deps
           command: pip install --quiet requests
-
+ 
       - run:
           name: Run TruffleHog on GitHub repo
           command: |
@@ -60,27 +63,29 @@ jobs:
               2>/dev/null \
             | tee scan_results/github_scan.jsonl || true
             echo "GitHub scan complete. Lines found: $(wc -l < scan_results/github_scan.jsonl)"
-
+ 
       - persist_to_workspace:
           root: .
           paths:
             - scan_results/github_scan.jsonl
-
+ 
   # ── 2. Scan a Docker image ────────────────────
   scan_docker_image:
     executor: scanner
     steps:
       - checkout
-
+ 
       - setup_remote_docker:
           version: default
-
+ 
       - run:
           name: Install TruffleHog
           command: |
+            mkdir -p "$HOME/bin"
             curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
-              | sh -s -- -b /usr/local/bin
-
+              | sh -s -- -b "$HOME/bin"
+            echo 'export PATH="$HOME/bin:$PATH"' >> "$BASH_ENV"
+ 
       - run:
           name: Run TruffleHog on Docker image
           command: |
@@ -91,25 +96,25 @@ jobs:
               2>/dev/null \
             | tee scan_results/docker_scan.jsonl || true
             echo "Docker scan complete. Lines found: $(wc -l < scan_results/docker_scan.jsonl)"
-
+ 
       - persist_to_workspace:
           root: .
           paths:
             - scan_results/docker_scan.jsonl
-
+ 
   # ── 3. Merge results → SQLite → upload ────────
   store_and_export:
     executor: scanner
     steps:
       - checkout
-
+ 
       - attach_workspace:
           at: .
-
+ 
       - run:
           name: Install Python deps
           command: pip install --quiet sqlite-utils
-
+ 
       - run:
           name: Merge JSONL files and load into SQLite
           command: |
@@ -117,21 +122,21 @@ jobs:
               --github  scan_results/github_scan.jsonl \
               --docker  scan_results/docker_scan.jsonl \
               --db      scan_results/trufflehog.db
-
+ 
       - run:
           name: Print summary
           command: python scripts/print_summary.py --db scan_results/trufflehog.db
-
+ 
       # ── Persist DB as a CircleCI artifact so you can download it
       - store_artifacts:
           path: scan_results/trufflehog.db
           destination: trufflehog.db
-
+ 
       # ── Also persist the raw JSONL for debugging
       - store_artifacts:
           path: scan_results
           destination: scan_results
-
+ 
       # ── Optional: copy DB to a shared volume / S3 / network share
       #    that Redash can reach.  Uncomment and fill in as needed.
       #
@@ -140,7 +145,7 @@ jobs:
       #     command: |
       #       aws s3 cp scan_results/trufflehog.db \
       #         s3://$AWS_BUCKET/trufflehog/trufflehog.db
-
+ 
 # ──────────────────────────────────────────────
 # Workflow
 # ──────────────────────────────────────────────
@@ -153,3 +158,4 @@ workflows:
           requires:
             - scan_github_repo
             - scan_docker_image
+
