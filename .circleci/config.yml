@@ -62,6 +62,7 @@ jobs:
               --json \
               --max-depth << pipeline.parameters.scan_depth >> \
               --branch << pipeline.parameters.github_branch >> \
+              --include-detectors="aws,gcp,github,slack,privatekey" \
             | tee scan_results/github_scan.jsonl
             
             EXIT_CODE=$?
