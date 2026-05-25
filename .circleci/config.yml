@@ -7,34 +7,35 @@ orbs:
   python: circleci/python@2.1.1
 
 # ──────────────────────────────────────────────
-# Parameters  (override at pipeline trigger time)
+# Parameters
 # ──────────────────────────────────────────────
 parameters:
   github_repo_url:
     type: string
-    default: "https://github.com/medalizaidi/FI_Thnity.git#master" 
+    default: "https://github.com/medalizaidi/FI_Thnity.git"
   docker_image:
     type: string
-    default: "dali124/fi-thnity"              
+    default: "dali124/fi-thnity"
   scan_depth:
     type: integer
-    default: 50   
- 
+    default: 50
+  github_branch:
+    type: string
+    default: "master"
+
 # ──────────────────────────────────────────────
-# Reusable executors
+# Executors
 # ──────────────────────────────────────────────
 executors:
   scanner:
     docker:
       - image: cimg/python:3.11
     resource_class: medium
- 
+
 # ──────────────────────────────────────────────
 # Jobs
 # ──────────────────────────────────────────────
 jobs:
- 
-  # ── 1. Scan a GitHub repository ──────────────
   scan_github_repo:
     executor: scanner
     steps:
@@ -54,26 +55,25 @@ jobs:
           command: |
             mkdir -p scan_results
             echo "Scanning: << pipeline.parameters.github_repo_url >>"
+            echo "Branch: << pipeline.parameters.github_branch >>"
             echo "Max depth: << pipeline.parameters.scan_depth >>"
             
             trufflehog git "<< pipeline.parameters.github_repo_url >>" \
               --json \
               --max-depth << pipeline.parameters.scan_depth >> \
               --no-update \
-              --only-verified \
+              --branch << pipeline.parameters.github_branch >> \
             | tee scan_results/github_scan.jsonl
             
             EXIT_CODE=$?
             echo "TruffleHog exit code: $EXIT_CODE"
             
-            # Show summary
             echo "--- SCAN SUMMARY ---"
             echo "Total lines output: $(wc -l < scan_results/github_scan.jsonl)"
             echo "Verified secrets found: $(grep -c '"Verified":true' scan_results/github_scan.jsonl || echo 0)"
             echo "Unverified secrets found: $(grep -c '"Verified":false' scan_results/github_scan.jsonl || echo 0)"
             echo "--------------------"
             
-            # Fail if TruffleHog itself failed (but not if just no secrets found)
             if [ $EXIT_CODE -ne 0 ] && [ $EXIT_CODE -ne 183 ]; then
               echo "ERROR: TruffleHog failed with exit code $EXIT_CODE"
               exit 1
@@ -87,8 +87,7 @@ jobs:
           root: .
           paths:
             - scan_results/github_scan.jsonl
- 
-  # ── 2. Scan a Docker image ────────────────────
+
   scan_docker_image:
     executor: scanner
     steps:
@@ -107,15 +106,17 @@ jobs:
             trufflehog --version
 
       - run:
-          name: Run TruffleHog on Docker image
+          name: Docker login and scan
           command: |
             mkdir -p scan_results
             echo "Scanning Docker image: << pipeline.parameters.docker_image >>"
             
+            # Login to Docker Hub (credentials from project env vars)
+            echo "$DOCKER_HUB_TOKEN" | docker login -u "$DOCKER_HUB_USER" --password-stdin
+            
             trufflehog docker --image "<< pipeline.parameters.docker_image >>" \
               --json \
               --no-update \
-              --only-verified \
             | tee scan_results/docker_scan.jsonl
             
             EXIT_CODE=$?
@@ -140,19 +141,19 @@ jobs:
           root: .
           paths:
             - scan_results/docker_scan.jsonl
-  # ── 3. Merge results → SQLite → upload ────────
+
   store_and_export:
     executor: scanner
     steps:
       - checkout
- 
+
       - attach_workspace:
           at: .
- 
+
       - run:
           name: Install Python deps
           command: pip install --quiet sqlite-utils
- 
+
       - run:
           name: Merge JSONL files and load into SQLite
           command: |
@@ -160,33 +161,19 @@ jobs:
               --github  scan_results/github_scan.jsonl \
               --docker  scan_results/docker_scan.jsonl \
               --db      scan_results/trufflehog.db
- 
+
       - run:
           name: Print summary
           command: python scripts/print_summary.py --db scan_results/trufflehog.db
- 
-      # ── Persist DB as a CircleCI artifact so you can download it
+
       - store_artifacts:
           path: scan_results/trufflehog.db
           destination: trufflehog.db
- 
-      # ── Also persist the raw JSONL for debugging
+
       - store_artifacts:
           path: scan_results
           destination: scan_results
- 
-      # ── Optional: copy DB to a shared volume / S3 / network share
-      #    that Redash can reach.  Uncomment and fill in as needed.
-      #
-      # - run:
-      #     name: Upload DB to S3
-      #     command: |
-      #       aws s3 cp scan_results/trufflehog.db \
-      #         s3://$AWS_BUCKET/trufflehog/trufflehog.db
- 
-# ──────────────────────────────────────────────
-# Workflow
-# ──────────────────────────────────────────────
+
 workflows:
   trufflehog_scan:
     jobs:
@@ -196,4 +183,3 @@ workflows:
           requires:
             - scan_github_repo
             - scan_docker_image
-
