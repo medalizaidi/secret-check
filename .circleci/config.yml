@@ -12,7 +12,7 @@ orbs:
 parameters:
   github_repo_url:
     type: string
-    default: "https://github.com/medalizaidi/FI_Thnity.git" 
+    default: "https://github.com/medalizaidi/FI_Thnity.git#master" 
   docker_image:
     type: string
     default: "dali124/fi-thnity"              
