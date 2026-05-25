@@ -37,10 +37,10 @@ CREATE TABLE IF NOT EXISTS findings (
     source_type         INTEGER,
     source_metadata_str TEXT,                   -- JSON blob
     repository_url      TEXT,
-    commit              TEXT,
+    "commit"            TEXT,
     file                TEXT,
     email               TEXT,
-    timestamp           TEXT,
+    "timestamp"         TEXT,
     line                INTEGER,
     link                TEXT,
     extra_data_str      TEXT                    -- JSON blob
@@ -165,7 +165,7 @@ def load_file(path: Path, scan_source: str, scanned_at: str, cur: sqlite3.Cursor
             """INSERT INTO findings
                (scan_source, scanned_at, detector_name, detector_type, decoder_name,
                 verified, raw, raw_v2, source_name, source_type, source_metadata_str,
-                repository_url, commit, file, email, timestamp, line, link, extra_data_str)
+                repository_url, "commit", file, email, "timestamp", line, link, extra_data_str)
                VALUES
                (:scan_source, :scanned_at, :detector_name, :detector_type, :decoder_name,
                 :verified, :raw, :raw_v2, :source_name, :source_type, :source_metadata_str,
