@@ -39,7 +39,7 @@ jobs:
     executor: scanner
     steps:
       - checkout
- 
+
       - run:
           name: Install TruffleHog
           command: |
@@ -47,23 +47,42 @@ jobs:
             curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
               | sh -s -- -b "$HOME/bin"
             echo 'export PATH="$HOME/bin:$PATH"' >> "$BASH_ENV"
- 
-      - run:
-          name: Install Python deps
-          command: pip install --quiet requests
- 
+            trufflehog --version
+
       - run:
           name: Run TruffleHog on GitHub repo
           command: |
             mkdir -p scan_results
+            echo "Scanning: << pipeline.parameters.github_repo_url >>"
+            echo "Max depth: << pipeline.parameters.scan_depth >>"
+            
             trufflehog git "<< pipeline.parameters.github_repo_url >>" \
               --json \
               --max-depth << pipeline.parameters.scan_depth >> \
               --no-update \
-              2>/dev/null \
-            | tee scan_results/github_scan.jsonl || true
-            echo "GitHub scan complete. Lines found: $(wc -l < scan_results/github_scan.jsonl)"
- 
+              --only-verified \
+            | tee scan_results/github_scan.jsonl
+            
+            EXIT_CODE=$?
+            echo "TruffleHog exit code: $EXIT_CODE"
+            
+            # Show summary
+            echo "--- SCAN SUMMARY ---"
+            echo "Total lines output: $(wc -l < scan_results/github_scan.jsonl)"
+            echo "Verified secrets found: $(grep -c '"Verified":true' scan_results/github_scan.jsonl || echo 0)"
+            echo "Unverified secrets found: $(grep -c '"Verified":false' scan_results/github_scan.jsonl || echo 0)"
+            echo "--------------------"
+            
+            # Fail if TruffleHog itself failed (but not if just no secrets found)
+            if [ $EXIT_CODE -ne 0 ] && [ $EXIT_CODE -ne 183 ]; then
+              echo "ERROR: TruffleHog failed with exit code $EXIT_CODE"
+              exit 1
+            fi
+
+      - store_artifacts:
+          path: scan_results/github_scan.jsonl
+          destination: github_scan.jsonl
+
       - persist_to_workspace:
           root: .
           paths:
@@ -74,10 +93,10 @@ jobs:
     executor: scanner
     steps:
       - checkout
- 
+
       - setup_remote_docker:
           version: default
- 
+
       - run:
           name: Install TruffleHog
           command: |
@@ -85,23 +104,42 @@ jobs:
             curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
               | sh -s -- -b "$HOME/bin"
             echo 'export PATH="$HOME/bin:$PATH"' >> "$BASH_ENV"
- 
+            trufflehog --version
+
       - run:
           name: Run TruffleHog on Docker image
           command: |
             mkdir -p scan_results
+            echo "Scanning Docker image: << pipeline.parameters.docker_image >>"
+            
             trufflehog docker --image "<< pipeline.parameters.docker_image >>" \
               --json \
               --no-update \
-              2>/dev/null \
-            | tee scan_results/docker_scan.jsonl || true
-            echo "Docker scan complete. Lines found: $(wc -l < scan_results/docker_scan.jsonl)"
- 
+              --only-verified \
+            | tee scan_results/docker_scan.jsonl
+            
+            EXIT_CODE=$?
+            echo "TruffleHog exit code: $EXIT_CODE"
+            
+            echo "--- SCAN SUMMARY ---"
+            echo "Total lines output: $(wc -l < scan_results/docker_scan.jsonl)"
+            echo "Verified secrets found: $(grep -c '"Verified":true' scan_results/docker_scan.jsonl || echo 0)"
+            echo "Unverified secrets found: $(grep -c '"Verified":false' scan_results/docker_scan.jsonl || echo 0)"
+            echo "--------------------"
+            
+            if [ $EXIT_CODE -ne 0 ] && [ $EXIT_CODE -ne 183 ]; then
+              echo "ERROR: TruffleHog failed with exit code $EXIT_CODE"
+              exit 1
+            fi
+
+      - store_artifacts:
+          path: scan_results/docker_scan.jsonl
+          destination: docker_scan.jsonl
+
       - persist_to_workspace:
           root: .
           paths:
             - scan_results/docker_scan.jsonl
- 
   # ── 3. Merge results → SQLite → upload ────────
   store_and_export:
     executor: scanner
