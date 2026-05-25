@@ -111,7 +111,10 @@ jobs:
             mkdir -p scan_results
             echo "Scanning Docker image: << pipeline.parameters.docker_image >>"
             
-            # Login to Docker Hub (credentials from project env vars)
+            # Explicitly export variables for docker login
+            export DOCKER_HUB_USER="$DOCKER_HUB_USER"
+            export DOCKER_HUB_TOKEN="$DOCKER_HUB_TOKEN"
+            
             echo "$DOCKER_HUB_TOKEN" | docker login -u "$DOCKER_HUB_USER" --password-stdin
             
             trufflehog docker --image "<< pipeline.parameters.docker_image >>" \
