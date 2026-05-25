@@ -21,7 +21,7 @@ parameters:
     default: 50
   github_branch:
     type: string
-    default: "master"
+    default: "main"
 
 # ──────────────────────────────────────────────
 # Executors
@@ -78,6 +78,18 @@ jobs:
               echo "ERROR: TruffleHog failed with exit code $EXIT_CODE"
               exit 1
             fi
+      - run:
+          name: Test TruffleHog detection
+          command: |
+            mkdir -p /tmp/test-scan
+            echo "AKIAIOSFODNN7EXAMPLE" > /tmp/test-scan/aws.txt
+            echo "ghp_000000000000000000000000000000000000" > /tmp/test-scan/github.txt
+            
+            echo "=== Testing TruffleHog filesystem scanner ==="
+            trufflehog filesystem /tmp/test-scan --json --no-update || true
+            
+            echo "=== Testing with debug ==="
+            trufflehog filesystem /tmp/test-scan --json --no-update --debug 2>&1 | head -20 || true
 
       - store_artifacts:
           path: scan_results/github_scan.jsonl
