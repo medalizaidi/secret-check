@@ -106,18 +106,12 @@ jobs:
             trufflehog --version
 
       - run:
-          name: Docker login, pull and scan
+          name: Scan Docker image
           command: |
             mkdir -p scan_results
             echo "Scanning Docker image: << pipeline.parameters.docker_image >>"
             
-            # Login
-            echo "$DOCKER_HUB_TOKEN" | docker login -u "$DOCKER_HUB_USER" --password-stdin
-            
-            # Pull the image first (this validates auth)
-            docker pull "<< pipeline.parameters.docker_image >>"
-            
-            # Scan the local image
+            # Removed docker login — image must be public
             trufflehog docker --image "<< pipeline.parameters.docker_image >>" \
               --json \
               --no-update \
