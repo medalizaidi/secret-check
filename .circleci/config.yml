@@ -1,0 +1,156 @@
+version: 2.1
+
+# ──────────────────────────────────────────────
+# Orbs
+# ──────────────────────────────────────────────
+orbs:
+  python: circleci/python@2.1.1
+
+# ──────────────────────────────────────────────
+# Parameters  (override at pipeline trigger time)
+# ──────────────────────────────────────────────
+parameters:
+  github_repo_url:
+    type: string
+    default: "https://github.com/your-org/your-repo"   # ← change me
+  docker_image:
+    type: string
+    default: "your-org/your-image:latest"               # ← change me
+  scan_depth:
+    type: integer
+    default: 50   # commits to scan in git history
+
+# ──────────────────────────────────────────────
+# Reusable executors
+# ──────────────────────────────────────────────
+executors:
+  scanner:
+    docker:
+      - image: cimg/python:3.11
+    resource_class: medium
+
+# ──────────────────────────────────────────────
+# Jobs
+# ──────────────────────────────────────────────
+jobs:
+
+  # ── 1. Scan a GitHub repository ──────────────
+  scan_github_repo:
+    executor: scanner
+    steps:
+      - checkout
+
+      - run:
+          name: Install TruffleHog
+          command: |
+            curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
+              | sh -s -- -b /usr/local/bin
+
+      - run:
+          name: Install Python deps
+          command: pip install --quiet requests
+
+      - run:
+          name: Run TruffleHog on GitHub repo
+          command: |
+            mkdir -p scan_results
+            trufflehog git "<< pipeline.parameters.github_repo_url >>" \
+              --json \
+              --max-depth << pipeline.parameters.scan_depth >> \
+              --no-update \
+              2>/dev/null \
+            | tee scan_results/github_scan.jsonl || true
+            echo "GitHub scan complete. Lines found: $(wc -l < scan_results/github_scan.jsonl)"
+
+      - persist_to_workspace:
+          root: .
+          paths:
+            - scan_results/github_scan.jsonl
+
+  # ── 2. Scan a Docker image ────────────────────
+  scan_docker_image:
+    executor: scanner
+    steps:
+      - checkout
+
+      - setup_remote_docker:
+          version: default
+
+      - run:
+          name: Install TruffleHog
+          command: |
+            curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
+              | sh -s -- -b /usr/local/bin
+
+      - run:
+          name: Run TruffleHog on Docker image
+          command: |
+            mkdir -p scan_results
+            trufflehog docker --image "<< pipeline.parameters.docker_image >>" \
+              --json \
+              --no-update \
+              2>/dev/null \
+            | tee scan_results/docker_scan.jsonl || true
+            echo "Docker scan complete. Lines found: $(wc -l < scan_results/docker_scan.jsonl)"
+
+      - persist_to_workspace:
+          root: .
+          paths:
+            - scan_results/docker_scan.jsonl
+
+  # ── 3. Merge results → SQLite → upload ────────
+  store_and_export:
+    executor: scanner
+    steps:
+      - checkout
+
+      - attach_workspace:
+          at: .
+
+      - run:
+          name: Install Python deps
+          command: pip install --quiet sqlite-utils
+
+      - run:
+          name: Merge JSONL files and load into SQLite
+          command: |
+            python scripts/load_to_sqlite.py \
+              --github  scan_results/github_scan.jsonl \
+              --docker  scan_results/docker_scan.jsonl \
+              --db      scan_results/trufflehog.db
+
+      - run:
+          name: Print summary
+          command: python scripts/print_summary.py --db scan_results/trufflehog.db
+
+      # ── Persist DB as a CircleCI artifact so you can download it
+      - store_artifacts:
+          path: scan_results/trufflehog.db
+          destination: trufflehog.db
+
+      # ── Also persist the raw JSONL for debugging
+      - store_artifacts:
+          path: scan_results
+          destination: scan_results
+
+      # ── Optional: copy DB to a shared volume / S3 / network share
+      #    that Redash can reach.  Uncomment and fill in as needed.
+      #
+      # - run:
+      #     name: Upload DB to S3
+      #     command: |
+      #       aws s3 cp scan_results/trufflehog.db \
+      #         s3://$AWS_BUCKET/trufflehog/trufflehog.db
+
+# ──────────────────────────────────────────────
+# Workflow
+# ──────────────────────────────────────────────
+workflows:
+  trufflehog_scan:
+    jobs:
+      - scan_github_repo
+      - scan_docker_image
+      - store_and_export:
+          requires:
+            - scan_github_repo
+            - scan_docker_image

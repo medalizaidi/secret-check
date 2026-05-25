@@ -1,0 +1,82 @@
+version: "3.8"
+
+# ──────────────────────────────────────────────────────────────────
+#  Redash + supporting services
+#
+#  Usage:
+#    1. Copy trufflehog.db into ./data/trufflehog.db
+#    2. docker compose up -d
+#    3. On first run: docker compose run --rm redash create_db
+#    4. Open http://localhost:5000 and finish setup
+#    5. Add a SQLite data source pointing to /data/trufflehog.db
+# ──────────────────────────────────────────────────────────────────
+
+x-redash-env: &redash-env
+  REDASH_DATABASE_URL: "postgresql://redash:redash@postgres/redash"
+  REDASH_REDIS_URL: "redis://redis:6379/0"
+  REDASH_SECRET_KEY: "change-me-in-production-use-a-long-random-string"
+  REDASH_COOKIE_SECRET: "change-me-too"
+  PYTHONUNBUFFERED: "0"
+
+services:
+
+  # ── Redash web server ──────────────────────────────────────────
+  redash:
+    image: redash/redash:10.1.0.b50633
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "5000:5000"
+    environment:
+      <<: *redash-env
+    volumes:
+      # Mount the folder where CircleCI drops the SQLite DB
+      - ./data:/data:ro
+    command: server
+    restart: unless-stopped
+
+  # ── Redash background worker ───────────────────────────────────
+  worker:
+    image: redash/redash:10.1.0.b50633
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      <<: *redash-env
+    volumes:
+      - ./data:/data:ro
+    command: worker
+    restart: unless-stopped
+
+  # ── Redash scheduler ──────────────────────────────────────────
+  scheduler:
+    image: redash/redash:10.1.0.b50633
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      <<: *redash-env
+    volumes:
+      - ./data:/data:ro
+    command: scheduler
+    restart: unless-stopped
+
+  # ── PostgreSQL (Redash metadata) ───────────────────────────────
+  postgres:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_USER: redash
+      POSTGRES_PASSWORD: redash
+      POSTGRES_DB: redash
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # ── Redis ──────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
