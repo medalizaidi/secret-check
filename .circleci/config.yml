@@ -79,17 +79,17 @@ jobs:
               exit 1
             fi
       - run:
-          name: Test TruffleHog detection
+          name: Verify TruffleHog detection works
           command: |
-            mkdir -p /tmp/test-scan
-            echo "AKIAIOSFODNN7EXAMPLE" > /tmp/test-scan/aws.txt
-            echo "ghp_000000000000000000000000000000000000" > /tmp/test-scan/github.txt
+            mkdir -p /tmp/verify
+            echo "AKIAQWERTYUIOPASDFGH" > /tmp/verify/aws.txt
+            echo "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890Ab" > /tmp/verify/github.txt
             
-            echo "=== Testing TruffleHog filesystem scanner ==="
-            trufflehog filesystem /tmp/test-scan --json --no-update || true
+            echo "=== Filesystem scan (should find secrets) ==="
+            trufflehog filesystem /tmp/verify --json --no-update
             
-            echo "=== Testing with debug ==="
-            trufflehog filesystem /tmp/test-scan --json --no-update --debug 2>&1 | head -20 || true
+            echo "=== Checking output ==="
+            trufflehog filesystem /tmp/verify --json --no-update | wc -l
 
       - store_artifacts:
           path: scan_results/github_scan.jsonl
