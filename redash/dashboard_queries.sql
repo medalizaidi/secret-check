@@ -31,7 +31,7 @@ SELECT
     detector_name,
     decoder_name,
     file,
-    commit,
+    "commit",
     line,
     repository_url,
     link,
@@ -123,7 +123,7 @@ SELECT
     decoder_name,
     file,
     line,
-    commit,
+    "commit",
     repository_url,
     link,
     scanned_at
