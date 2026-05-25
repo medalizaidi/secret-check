@@ -106,35 +106,22 @@ jobs:
             trufflehog --version
 
       - run:
-          name: Docker login and scan
+          name: Docker login, pull and scan
           command: |
             mkdir -p scan_results
             echo "Scanning Docker image: << pipeline.parameters.docker_image >>"
             
-            # Explicitly export variables for docker login
-            export DOCKER_HUB_USER="$DOCKER_HUB_USER"
-            export DOCKER_HUB_TOKEN="$DOCKER_HUB_TOKEN"
-            
+            # Login
             echo "$DOCKER_HUB_TOKEN" | docker login -u "$DOCKER_HUB_USER" --password-stdin
             
+            # Pull the image first (this validates auth)
+            docker pull "<< pipeline.parameters.docker_image >>"
+            
+            # Scan the local image
             trufflehog docker --image "<< pipeline.parameters.docker_image >>" \
               --json \
               --no-update \
             | tee scan_results/docker_scan.jsonl
-            
-            EXIT_CODE=$?
-            echo "TruffleHog exit code: $EXIT_CODE"
-            
-            echo "--- SCAN SUMMARY ---"
-            echo "Total lines output: $(wc -l < scan_results/docker_scan.jsonl)"
-            echo "Verified secrets found: $(grep -c '"Verified":true' scan_results/docker_scan.jsonl || echo 0)"
-            echo "Unverified secrets found: $(grep -c '"Verified":false' scan_results/docker_scan.jsonl || echo 0)"
-            echo "--------------------"
-            
-            if [ $EXIT_CODE -ne 0 ] && [ $EXIT_CODE -ne 183 ]; then
-              echo "ERROR: TruffleHog failed with exit code $EXIT_CODE"
-              exit 1
-            fi
 
       - store_artifacts:
           path: scan_results/docker_scan.jsonl
