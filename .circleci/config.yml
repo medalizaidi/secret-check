@@ -12,14 +12,13 @@ orbs:
 parameters:
   github_repo_url:
     type: string
-    default: "https://github.com/your-org/your-repo"   # ← change me
+    default: "https://github.com/medalizaidi/FI_Thnity.git" 
   docker_image:
     type: string
-    default: "your-org/your-image:latest"               # ← change me
+    default: "dali124/fi-thnity"              
   scan_depth:
     type: integer
-    default: 50   # commits to scan in git history
-
+    default: 50   
 # ──────────────────────────────────────────────
 # Reusable executors
 # ──────────────────────────────────────────────
